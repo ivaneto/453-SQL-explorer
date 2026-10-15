@@ -1,0 +1,182 @@
+Para explorar una base de datos relacional desde lo general hasta lo específico, se debe seguir una secuencia estructurada de inspección: desde la arquitectura del servidor y los esquemas hasta las restricciones de integridad y la distribución cualitativa de los datos.
+
+---
+
+### Nivel 1: Exploración del Entorno y Esquemas de la Base de Datos (Visión General)
+
+#### 1. Listar las bases de datos o esquemas disponibles
+* **Consulta SQL:**
+  ```sql
+  SHOW DATABASES;
+  ```
+  o mediante el catálogo del sistema ANSI/ISO:
+  ```sql
+  SELECT schema_name FROM information_schema.schemata;
+  ```
+* **Descripción y utilidad:** Muestra el listado de las bases de datos o esquemas definidos dentro del servidor actual, lo que permite identificar el entorno de trabajo específico sobre el cual se ejecutarán las consultas. En motores como Oracle, este nivel se explora consultando las vistas del diccionario de datos como `user_tablespaces` o `all_users`.
+
+#### 2. Listar todas las tablas y vistas registradas
+* **Consulta SQL:**
+  ```sql
+  SHOW TABLES;
+  ```
+  o mediante la vista del catálogo de metadatos:
+  ```sql
+  SELECT table_name, table_type, table_rows 
+  FROM information_schema.tables 
+  WHERE table_schema = 'nombre_base_datos' 
+  ORDER BY table_name;
+  ```
+* **Descripción y utilidad:** Devuelve la lista completa de objetos de tipo tabla almacenados en un esquema. Permite distinguir de forma explícita las tablas base de las vistas (`table_type`) y ofrece una estimación inicial del volumen de filas (`table_rows`). En SQLite, esta exploración se realiza sobre la tabla de sistema `sqlite_schema` ejecutando `SELECT name FROM sqlite_schema WHERE type='table';`.
+
+---
+
+### Nivel 2: Inspección Estructural de las Tablas (Columnas y Metadatos)
+
+#### 3. Inspeccionar la estructura interna de una tabla
+* **Consulta SQL:**
+  ```sql
+  DESCRIBE nombre_tabla;
+  ```
+  o su sintaxis equivalente reducida:
+  ```sql
+  DESC nombre_tabla;
+  ```
+* **Descripción y utilidad:** Proporciona un desglose detallado de los atributos de la tabla: nombre del campo, tipo de dato, permiso de valores nulos (`YES`/`NO`), tipo de clave/índice (`PRI`, `MUL`, `UNI`), valor por defecto y propiedades adicionales (como autoincremento). En SQLite se emplea el comando `PRAGMA table_info(nombre_tabla);`.
+
+#### 4. Consultar el diccionario de metadatos de columnas
+* **Consulta SQL:**
+  ```sql
+  SELECT column_name, data_type, is_nullable, column_key, column_default 
+  FROM information_schema.columns 
+  WHERE table_schema = 'nombre_base_datos' AND table_name = 'nombre_tabla' 
+  ORDER BY ordinal_position;
+  ```
+* **Descripción y utilidad:** Muestra la definición estándar de cada columna dentro de la tabla especificada, útil para auditar metadatos de forma programática cuando los comandos propios del SGBD no están disponibles.
+
+---
+
+### Nivel 3: Identificación de Claves, Restricciones y Relaciones (Integridad Referencial)
+
+#### 5. Consultar las restricciones definidas sobre una tabla
+* **Consulta SQL:**
+  ```sql
+  SELECT constraint_name, constraint_type, table_name 
+  FROM information_schema.table_constraints 
+  WHERE constraint_schema = 'nombre_base_datos' AND table_name = 'nombre_tabla';
+  ```
+* **Descripción y utilidad:** Identifica las reglas de integridad relacional aplicadas a la tabla, tales como claves primarias (`PRIMARY KEY`), restricciones de unicidad (`UNIQUE`), claves ajenas (`FOREIGN KEY`) y reglas de comprobación (`CHECK`).
+
+#### 6. Mapear las relaciones y claves foráneas entre tablas
+* **Consulta SQL:**
+  ```sql
+  SELECT table_name, column_name, referenced_table_name, referenced_column_name 
+  FROM information_schema.key_column_usage 
+  WHERE table_schema = 'nombre_base_datos' AND referenced_table_name IS NOT NULL;
+  ```
+  o en SQLite:
+  ```sql
+  PRAGMA foreign_key_list(nombre_tabla);
+  ```
+* **Descripción y utilidad:** Revela la arquitectura lógica y el diagrama relacional del sistema al listar las claves ajenas o foráneas (`FOREIGN KEY`) y las tablas/columnas origen que referencian, permitiendo entender cómo se conectan las tablas entre sí.
+
+---
+
+### Nivel 4: Muestreo de Datos y Conteo Físico (Previsualización)
+
+#### 7. Extraer una muestra limitada de datos reales
+* **Consulta SQL:**
+  ```sql
+  SELECT * FROM nombre_tabla LIMIT 10;
+  ```
+* **Descripción y utilidad:** Obtiene una vista previa de las primeras filas almacenadas sin sobrecargar la memoria del servidor ni los canales de red, ideal para inspeccionar formatos visuales, nombres y tipos reales de datos.
+
+#### 8. Contar el número total de filas registradas
+* **Consulta SQL:**
+  ```sql
+  SELECT COUNT(*) FROM nombre_tabla;
+  ```
+* **Descripción y utilidad:** Computa la cantidad total de tuplas o registros presentes en la tabla especificada, incluyendo filas con valores nulos o duplicados.
+
+---
+
+### Nivel 5: Análisis Cualitativo de Contenido (Calidad, Nulos y Cardinalidad)
+
+#### 9. Evaluar la presencia de valores nulos o ausentes
+* **Consulta SQL:**
+  ```sql
+  SELECT COUNT(*) AS total_nulos 
+  FROM nombre_tabla 
+  WHERE columna IS NULL;
+  ```
+* **Descripción y utilidad:** Mide la presencia de datos desconocidos o no aplicables (`NULL`) dentro de un campo. El operador `IS NULL` es la única forma válida de evaluar la ausencia de valor en SQL.
+
+#### 10. Inspeccionar valores distintos y cardinalidad de un campo
+* **Consulta SQL (Listado sin duplicados):**
+  ```sql
+  SELECT DISTINCT columna FROM nombre_tabla;
+  ```
+* **Consulta SQL (Conteo de valores únicos):**
+  ```sql
+  SELECT COUNT(DISTINCT columna) FROM nombre_tabla;
+  ```
+* **Descripción y utilidad:** La cláusula `DISTINCT` elimina las repeticiones del resultado para mostrar las categorías únicas de una columna. Combinada con `COUNT(DISTINCT ...)`, determina la cardinalidad exacta excluyendo duplicados y valores nulos.
+
+---
+
+### Nivel 6: Agregación, Agrupamiento y Análisis Descriptivo Específico
+
+#### 11. Calcular la frecuencia de registros por categorías
+* **Consulta SQL:**
+  ```sql
+  SELECT columna, COUNT(*) AS frecuencia 
+  FROM nombre_tabla 
+  GROUP BY columna 
+  ORDER BY frecuencia DESC;
+  ```
+* **Descripción y utilidad:** La cláusula `GROUP BY` junta todos los registros que comparten un mismo valor en el campo especificado y aplica la función agregada `COUNT(*)` a cada grupo, permitiendo analizar la distribución categórica de la base de datos.
+
+#### 12. Filtrar grupos de datos mediante condiciones agregadas
+* **Consulta SQL:**
+  ```sql
+  SELECT columna, COUNT(*) AS conteo 
+  FROM nombre_tabla 
+  GROUP BY columna 
+  HAVING COUNT(*) > 1;
+  ```
+* **Descripción y utilidad:** La cláusula `HAVING` actúa como un filtro sobre los grupos creados por `GROUP BY`. A diferencia de `WHERE` (que filtra filas individuales), `HAVING` filtra grupos completos basados en el resultado de una función agregada (por ejemplo, detectar duplicados no deseados en una clave candidata).
+
+#### 13. Obtener estadísticas descriptivas numéricas
+* **Consulta SQL:**
+  ```sql
+  SELECT 
+      MIN(columna) AS valor_minimo, 
+      MAX(columna) AS valor_maximo, 
+      AVG(columna) AS valor_promedio, 
+      SUM(columna) AS suma_total 
+  FROM nombre_tabla;
+  ```
+* **Descripción y utilidad:** Aplica las funciones internas de agregación sobre un atributo cuantitativo. Descartan automáticamente los valores nulos para calcular el rango, promedio numérico y acumulado total de los datos.
+
+---
+
+### Nivel 7: Inspección de Relaciones e Integridad Multitabla (JOINs)
+
+#### 14. Validar la coincidencia de datos entre tablas vinculadas
+* **Consulta SQL:**
+  ```sql
+  SELECT t1.clave, t1.campo_a, t2.campo_b 
+  FROM tabla_padre AS t1 
+  INNER JOIN tabla_hija AS t2 ON t1.clave = t2.clave_foranea;
+  ```
+* **Descripción y utilidad:** Combina registros de dos tablas basándose en la condición de igualdad de sus atributos relacionados, permitiendo verificar la consistencia de la unión entre claves primarias y ajenas.
+
+#### 15. Detectar registros huérfanos o desalineados entre tablas
+* **Consulta SQL:**
+  ```sql
+  SELECT t1.clave, t1.campo_a 
+  FROM tabla_padre AS t1 
+  LEFT JOIN tabla_hija AS t2 ON t1.clave = t2.clave_foranea 
+  WHERE t2.clave_foranea IS NULL;
+  ```
+* **Descripción y utilidad:** Combina un `LEFT JOIN` con un filtro `IS NULL` para ubicar las tuplas de la tabla izquierda que no poseen correspondencia en la tabla referenciada, permitiendo detectar fallos de integridad referencial o datos sin asociar.
